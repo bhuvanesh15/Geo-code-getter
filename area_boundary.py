@@ -235,7 +235,8 @@ def main() -> int:
 
     print(f"resolved {place['name']} ({place['type']}) {place['feature_id']}")
     slug = slugify(place.get("name") or args.query)
-    output = args.output or Path(f"{slug}.geojson")
+    output = args.output or Path("data") / f"{slug}.geojson"
+    output.parent.mkdir(parents=True, exist_ok=True)
     tile_dir = Path(f"tiles_{slug}")
 
     top_zoom = args.zoom or pick_zoom(place["bbox"], args.target_px, args.max_tiles)

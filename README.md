@@ -27,19 +27,19 @@ python area_boundary.py "Koramangala, Bengaluru"
 
 Open the printed `geojson.io` URL, **or** drag the `.geojson` file onto [geojson.io](https://geojson.io/).
 
-Sample already in the repo: `bengaluru_boundary.geojson`.
+Sample already in the repo: `data/bengaluru_boundary.geojson`.
 
 ---
 
 ## View coordinates (Bengaluru sample)
 
-`bengaluru_boundary.geojson` is **large** (~900 vertices, ~3.7k lines). Do **not** paste it into a geojson.io URL — the link will be too long for the browser.
+`data/bengaluru_boundary.geojson` is **large** (~900 vertices, ~3.7k lines). Do **not** paste it into a geojson.io URL — the link will be too long for the browser.
 
 Use one of these:
 
-1. Open [geojson.io](https://geojson.io/) → **Open → File** → pick `bengaluru_boundary.geojson`
+1. Open [geojson.io](https://geojson.io/) → **Open → File** → pick `data/bengaluru_boundary.geojson`
 2. Copy the file contents and paste into the JSON panel on the right of geojson.io
-3. Smaller samples (`koramangala.geojson`, `hsr_layout.geojson`) are short enough that the script's printed URL usually works
+3. Smaller samples (`data/koramangala.geojson`, `data/hsr_layout.geojson`) are short enough that the script's printed URL usually works
 
 ---
 
@@ -62,8 +62,8 @@ python maps_area_bounds.py "Anna Nagar, Chennai" --urls
 
 ```bash
 python area_boundary.py "Koramangala, Bengaluru"
-python area_boundary.py "HSR Layout, Bengaluru" --output hsr_layout.geojson
-python area_boundary.py "Tamil Nadu" --output tamil_nadu.geojson
+python area_boundary.py "HSR Layout, Bengaluru" --output data/hsr_layout.geojson
+python area_boundary.py "Tamil Nadu" --output data/tamil_nadu.geojson
 python area_boundary.py "Bengaluru, Karnataka" --keep-tiles
 ```
 
@@ -141,12 +141,11 @@ trace_maps_boundary.py    # dash linker + GeoJSON writer
 fetch_boundary_tiles.py   # optional: replay tiles from a HAR
 capture_maps_boundary.py  # optional: Playwright HAR capture
 extract_maps_tiles.py     # optional: stitch tiles out of a HAR
-bengaluru_boundary.geojson
-koramangala.geojson
-hsr_layout.geojson
+data/                     # sample GeoJSON outlines
+  bengaluru_boundary.geojson
+  koramangala.geojson
+  hsr_layout.geojson
 ```
-
-Heavy PNGs, tile mosaics, HAR files, Cursor skills (`.cursor/`), and session dumps (`r1.txt` …) are gitignored.
 
 ---
 
