@@ -1,0 +1,5 @@
+curl_cffi
+pillow
+numpy
+scipy
+opencv-python-headless
