@@ -3,6 +3,7 @@
   "framework": null,
   "installCommand": "echo skip",
   "buildCommand": "echo skip",
+  "outputDirectory": ".",
   "rewrites": [
     { "source": "/", "destination": "/viewer/index.html" }
   ]
