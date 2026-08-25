@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from datetime import datetime, timezone
 import json
 import math
 from pathlib import Path
@@ -15,10 +16,23 @@ from PIL import Image
 from scipy.spatial import cKDTree
 
 
-def outline_mask(rgb: np.ndarray, base_path: Path, target_rgb: tuple[int, int, int], tolerance: float) -> np.ndarray:
+def outline_mask(
+    rgb: np.ndarray,
+    base_path: Path | None,
+    target_rgb: tuple[int, int, int],
+    tolerance: float,
+    base_rgb: np.ndarray | None = None,
+) -> np.ndarray:
     """Pixels that belong to Maps' selected-place outline, not POI pins."""
-    if base_path.exists():
+    base = None
+    if base_rgb is not None:
+        base = np.asarray(base_rgb)
+        if base.ndim == 3 and base.shape[2] == 4:
+            base = base[:, :, :3]
+        base = base.astype(np.int16)
+    elif base_path is not None and Path(base_path).exists():
         base = np.asarray(Image.open(base_path).convert("RGB")).astype(np.int16)
+    if base is not None:
         change = np.abs(rgb.astype(np.int16) - base).sum(axis=2)
         # Overlay tint is ~35. Outline pixels are the heavy tail (~100–400).
         threshold = max(50.0, float(np.percentile(change, 99.15)))
@@ -210,8 +224,8 @@ def polygon_area_km2(ring: list[list[float]]) -> float:
 
 
 def trace(
-    image_path: Path,
-    metadata_path: Path,
+    image_path: Path | None,
+    metadata_path: Path | None,
     output: Path,
     target_rgb: tuple[int, int, int],
     tolerance: float,
@@ -219,12 +233,27 @@ def trace(
     bridge_size: int,
     name: str | None = None,
     quiet: bool = False,
+    rgb: np.ndarray | None = None,
+    base_rgb: np.ndarray | None = None,
+    metadata: dict | None = None,
+    write_diagnostics: bool = True,
+    mode: str | None = None,
 ) -> bool:
     """Write a GeoJSON polygon. Returns whether the outline formed a closed ring."""
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    rgb = np.asarray(Image.open(image_path).convert("RGB"))
-    base_path = image_path.parent / image_path.name.replace("stitched", "base")
-    mask = outline_mask(rgb, base_path, target_rgb, tolerance)
+    if metadata is None:
+        if metadata_path is None:
+            raise ValueError("metadata or metadata_path is required")
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if rgb is None:
+        if image_path is None:
+            raise ValueError("rgb or image_path is required")
+        rgb = np.asarray(Image.open(image_path).convert("RGB"))
+    elif rgb.ndim == 3 and rgb.shape[2] == 4:
+        rgb = rgb[:, :, :3]
+    base_path = None
+    if image_path is not None:
+        base_path = image_path.parent / image_path.name.replace("stitched", "base")
+    mask = outline_mask(rgb, base_path, target_rgb, tolerance, base_rgb=base_rgb)
     kernel = close_kernel(int(metadata["zoom"]), bridge_size)
     connected = cv2.morphologyEx(
         mask, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel, kernel))
@@ -328,6 +357,10 @@ def trace(
                     "vertices": len(ring) - 1,
                     "approx_area_km2": round(polygon_area_km2(ring), 3),
                     "closed_ring": closed,
+                    "extracted_at": datetime.now(timezone.utc).strftime(
+                        "%Y-%m-%dT%H:%M:%SZ"
+                    ),
+                    "mode": mode,
                     "warning": (
                         "Reverse-traced from raster tiles; accuracy is limited "
                         "by Web Mercator pixel resolution at the captured zoom."
@@ -339,10 +372,11 @@ def trace(
     }
     output.write_text(json.dumps(feature, indent=2), encoding="utf-8")
 
-    diagnostic = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-    cv2.drawContours(diagnostic, [simplified], -1, (255, 0, 255), 2)
-    cv2.imwrite(str(output.with_suffix(".trace.png")), diagnostic)
-    cv2.imwrite(str(output.with_suffix(".mask.png")), connected)
+    if write_diagnostics:
+        diagnostic = cv2.cvtColor(np.ascontiguousarray(rgb), cv2.COLOR_RGB2BGR)
+        cv2.drawContours(diagnostic, [simplified], -1, (255, 0, 255), 2)
+        cv2.imwrite(str(output.with_suffix(".trace.png")), diagnostic)
+        cv2.imwrite(str(output.with_suffix(".mask.png")), connected)
     if not quiet:
         print(
             f"wrote {output}: {len(ring) - 1} vertices "

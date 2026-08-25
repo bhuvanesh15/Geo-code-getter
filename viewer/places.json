@@ -1,0 +1,29 @@
+{
+  "title": "Region outline (unofficial Maps trace)",
+  "places": [
+    {
+      "id": "koramangala",
+      "query": "Koramangala, Bengaluru",
+      "file": "/data/koramangala.geojson",
+      "group": "india"
+    },
+    {
+      "id": "lagos",
+      "query": "Lagos, Nigeria",
+      "file": "/data/lagos.geojson",
+      "group": "world"
+    },
+    {
+      "id": "tokyo",
+      "query": "Tokyo, Japan",
+      "file": "/data/tokyo.geojson",
+      "group": "world"
+    },
+    {
+      "id": "sydney",
+      "query": "Sydney, Australia",
+      "file": "/data/sydney.geojson",
+      "group": "world"
+    }
+  ]
+}

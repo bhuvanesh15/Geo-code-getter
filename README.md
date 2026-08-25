@@ -2,153 +2,118 @@
 
 Turn a place name into **lat/lng coordinates** as GeoJSON.
 
-Two outputs:
+This is an unofficial replay of Google Maps `preview/place` + `maps/vt` tiles. It is **not** the official Geocoding or Places API (those only give a box, not the dashed region).
 
-| Command | What you get | Speed |
+| Command | What you get | Typical time |
 |---|---|---|
-| `maps_area_bounds.py` | Axis-aligned **bounding box** (4 corners) | ~1 request, a few seconds |
-| `area_boundary.py` | **Polygon outline** traced from Google Maps tiles | tens of seconds to a couple of minutes |
+| `maps_area_bounds.py` | Axis-aligned **bounding box** | ~1 request |
+| `area_boundary.py --mode fast` | Coarse **polygon** (one zoom, one kernel) | ~2 s |
+| `area_boundary.py --mode balanced` | Better neighborhood/city ring | ~6–15 s |
+| `area_boundary.py --mode hi-fi --zoom 15` | High-detail city ring (many tiles) | tens of seconds |
+| `viewer_server.py` | Local map UI: search → fill outline, latency + JSON | same as extract |
 
-This is an unofficial replay of Google Maps' `preview/place` + `maps/vt` tile protocol. It is not the official Geocoding API.
+---
+
+## Install
+
+```bash
+pip install -r requirements.txt
+```
 
 ---
 
 ## Quick run
 
 ```bash
-pip install -r requirements.txt
-
-# 1) Bounding box (fast)
+# Bounding box
 python maps_area_bounds.py "HSR Layout, Bengaluru"
 
-# 2) Real outline → GeoJSON + geojson.io link
-python area_boundary.py "Koramangala, Bengaluru"
+# Outline (default is --mode fast). --refresh skips a cached .geojson
+python area_boundary.py "Tokyo, Japan" --refresh --output data/tokyo.geojson
+
+# Correct neighborhood layout (slower)
+python area_boundary.py "Anna Nagar West, Chennai" --mode balanced --refresh --output data/anna_nagar_west.geojson
+
+# High accuracy city (wait for tiles)
+python area_boundary.py "Tiruchirappalli, Tamil Nadu" --mode hi-fi --zoom 15 --refresh --output data/tiruchirappalli.geojson
 ```
 
-Open the printed `geojson.io` URL, **or** drag the `.geojson` file onto [geojson.io](https://geojson.io/).
+Open [geojson.io](https://geojson.io/) → **Open → File**. Do not paste large files (e.g. Trichy ~2400 lines) into a geojson.io URL.
 
-Sample already in the repo: `data/bengaluru_boundary.geojson`.
+`closed_ring: true` means an enclosed interior. `false` is a fragment — still a GeoJSON loop (first point = last), but not the full region.
 
 ---
 
-## View coordinates (Bengaluru sample)
+## Modes
 
-`data/bengaluru_boundary.geojson` is **large** (~900 vertices, ~3.7k lines). Do **not** paste it into a geojson.io URL — the link will be too long for the browser.
+| `--mode` | Zoom cap | Tiles | Close retry | Use when |
+|---|---|---|---|---|
+| `fast` (default) | 10 | ≤24 pairs, no margin | **None** (one kernel; open ring is written and stop) | Latency SLO |
+| `balanced` | 13 | more tiles + margin | Several gap sizes, then step zoom | Neighborhoods / cities that must close |
+| `hi-fi` | 13 (or `--zoom 15`) | up to ~420 pairs | Same search as balanced | Max vertex detail |
 
-Use one of these:
+Other flags: `--output`, `--refresh`, `--keep-tiles`, `--workers`, `--max-tiles`, `--target-px`.
 
-1. Open [geojson.io](https://geojson.io/) → **Open → File** → pick `data/bengaluru_boundary.geojson`
-2. Copy the file contents and paste into the JSON panel on the right of geojson.io
-3. Smaller samples (`data/koramangala.geojson`, `data/hsr_layout.geojson`) are short enough that the script's printed URL usually works
+Western longitudes (e.g. Delaware) must be encoded as Maps **uint32 E7**. Signed negatives on spotlit tiles return **HTTP 400**. 4xx is not retried (except 429).
 
 ---
 
-## Commands
-
-### Bounding box
+## Local map viewer
 
 ```bash
-python maps_area_bounds.py "HSR Layout, Bengaluru"
-python maps_area_bounds.py "Brooklyn, New York" --json
-python maps_area_bounds.py "Koramangala" --geojson out.json
-python maps_area_bounds.py "Anna Nagar, Chennai" --urls
+python viewer_server.py
 ```
 
-`--urls` prints Google Maps links for the SW/NE corners so you can eyeball the box.
+Open http://127.0.0.1:8000/viewer/
 
-`--scrapingbee` routes the fetch through ScrapingBee if Google blocks you. Put `SCRAPINGBEE_API_KEY=` in `.cursor/env/scrapingbee.env` (not committed).
+- Search runs `--mode fast --refresh` and fills **Leaflet** + OSM (not Google map tiles).
+- HUD: closed/fragment, km², vertices, zoom, `extracted_at`, latency.
+- Current / previous JSON panels.
+- Recent list (up to 12) in `viewer/recent.json`.
 
-### Polygon outline
+Leaflet is free (BSD). OSM tiles are for light local use.
+
+---
+
+## Bench
 
 ```bash
-python area_boundary.py "Koramangala, Bengaluru"
-python area_boundary.py "HSR Layout, Bengaluru" --output data/hsr_layout.geojson
-python area_boundary.py "Tamil Nadu" --output data/tamil_nadu.geojson
-python area_boundary.py "Bengaluru, Karnataka" --keep-tiles
+python -u bench_region_ux.py
 ```
 
-| Flag | Meaning |
+Live `--mode fast --refresh` for Koramangala, Lagos, Tokyo, Sydney. Does not time a cache hit.
+
+---
+
+## Samples in `data/`
+
+| File | Notes |
 |---|---|
-| *(no `--zoom`)* | Auto-picks zoom from the place size, then steps down if the dashed outline does not close |
-| `--zoom 14` | Force a tile zoom. **Do not reuse Bengaluru's 14 for a whole state** |
-| `--output file.geojson` | Output path (default: `<place>.geojson`) |
-| `--keep-tiles` | Keep the stitched mosaic for debugging |
-| `--workers 8` | Parallel tile downloads |
-
-**Zoom vs area size**
-
-- City like Bengaluru → zoom ~14, ~1–2 minutes, detailed outline
-- Neighborhood like HSR / Koramangala → omit `--zoom`; forcing 16–17 often fails to close the dashed ring
-- State like Tamil Nadu → omit `--zoom` (script picks ~9–10). `--zoom 14` would request tens of thousands of tiles
-
-Each new place is a **new run**. Nothing is reused from `bengaluru_boundary.geojson`.
+| `anna_nagar_west.geojson` | balanced, closed, z13, ~9 km² |
+| `tiruchirappalli.geojson` | hi-fi z15, closed, ~590 verts |
+| `tokyo.geojson` / `lagos.geojson` / `sydney.geojson` | fast catalog cities |
+| `koramangala.geojson` | fast can be a fragment at z10 |
 
 ---
 
-## System design
-
-Reads never crawl Google. A lookup is: cache (if you add one) → else one extractor job.
+## How it works
 
 ```
 place name
-    │
-    ▼
-maps/preview/place     ← unofficial XHR (pb template, E7 ints)
-    │  name, feature_id, mid, gcid, center, bbox
-    ▼
-maps/vt spotlit tiles  ← PNG outline, not a vector API
-    │
-    ▼
-stitch + trace dashes  ← CPU; GeoJSON Polygon in WGS84
-    │
-    ▼
-.geojson + geojson.io URL
+    → maps/preview/place     (id, gcid, bbox, E7)
+    → maps/vt spotlit + base  (PNG tiles, parallel GETs, TLS session reuse)
+    → difference mask + morph-close
+    → GeoJSON Polygon
 ```
 
-**Why a rectangle first?** `preview/place` only returns the viewport box (`[[sw],[ne]]` as E7 integers). The red dashed outline on Maps is **rasterized into map tiles**. There is no public polygon payload. The outline path downloads those tiles and traces the red pixels back to lat/lng.
+There is no public vector outline. The dashed line is raster tiles.
 
-**Cost ladder**
+**Cost ladder:** HTTP replay → ScrapingBee `custom_google=true` if blocked → Playwright HAR only to recapture a drifted `pb` / tile epoch.
 
-1. HTTP replay of `preview/place` (`curl_cffi`) — bbox
-2. Same session + `maps/vt` PNGs — polygon
-3. ScrapingBee `custom_google=true` — if Google blocks
-4. Browser HAR capture — only to recapture a drifted `pb` / tile template
-
-**Hot vs cold**
-
-| Path | What | Typical time |
-|---|---|---|
-| Hot | Serve a saved `.geojson` | milliseconds |
-| Warm miss | `preview/place` bbox | ~0.5–2 s |
-| Cold | tile fetch + trace | 30 s – 2 min (auto zoom) |
-
-**Failure modes**
-
-- HTTP 400 on `preview/place` → `pb` template drifted; recapture from a live Maps load
-- Open ring (`closed_ring: false`) → dashed outline did not join; file is still written (largest fragment). Inspect `*.trace.png` if you passed `--keep-tiles`
-- Soft block (200 + captcha HTML) → step up transport, do not parse garbage
-
-**What this is not:** OSM administrative polygons, Google's official Geocoding API, or a street-accurate cadastral boundary. Pixel resolution at the chosen Web Mercator zoom is the accuracy ceiling.
-
----
-
-## Repo layout
-
-```
-area_boundary.py          # outline driver (use this)
-maps_area_bounds.py       # bbox-only
-trace_maps_boundary.py    # dash linker + GeoJSON writer
-fetch_boundary_tiles.py   # optional: replay tiles from a HAR
-capture_maps_boundary.py  # optional: Playwright HAR capture
-extract_maps_tiles.py     # optional: stitch tiles out of a HAR
-data/                     # sample GeoJSON outlines
-  bengaluru_boundary.geojson
-  koramangala.geojson
-  hsr_layout.geojson
-```
+Key in `.cursor/env/scrapingbee.env` (`SCRAPINGBEE_API_KEY=`). Do not commit it.
 
 ---
 
 ## License / use
 
-Public-data extraction for your own pipelines. Be polite to Google's tile endpoint (the script already caps tile count). Do not treat unofficial endpoints as a stable SLA.
+Unofficial public-data extraction. Endpoints can change (HTTP 400). Not a production SLA or official Google geometry. Be polite to the tile endpoint.

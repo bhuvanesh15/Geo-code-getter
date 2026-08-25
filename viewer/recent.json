@@ -1,0 +1,112 @@
+{
+  "places": [
+    {
+      "id": "koramangala_bengaluru",
+      "query": "Koramangala, Bengaluru",
+      "name": "Koramangala",
+      "file": "/data/koramangala_bengaluru.geojson",
+      "group": "recent",
+      "closed_ring": false,
+      "extracted_at": "2026-08-25T14:53:15Z"
+    },
+    {
+      "id": "shanthi_colony_anna_nagar",
+      "query": "Shanthi Colony, anna nagar",
+      "name": "Shanthi Colony",
+      "file": "/data/shanthi_colony_anna_nagar.geojson",
+      "group": "recent",
+      "closed_ring": false,
+      "extracted_at": "2026-08-25T14:47:34Z"
+    },
+    {
+      "id": "anna_nagar_west",
+      "query": "anna nagar west",
+      "name": "Anna Nagar West",
+      "file": "/data/anna_nagar_west.geojson",
+      "group": "recent",
+      "closed_ring": false,
+      "extracted_at": "2026-08-25T14:46:14Z"
+    },
+    {
+      "id": "brooklyn_us",
+      "query": "Brooklyn ,US",
+      "name": "Brooklyn",
+      "file": "/data/brooklyn_us.geojson",
+      "group": "recent",
+      "closed_ring": false,
+      "extracted_at": "2026-08-25T14:41:16Z"
+    },
+    {
+      "id": "madivala_karnataka",
+      "query": "madivala, karnataka",
+      "name": "Madiwala",
+      "file": "/data/madivala_karnataka.geojson",
+      "group": "recent",
+      "closed_ring": false,
+      "extracted_at": "2026-08-25T14:40:32Z"
+    },
+    {
+      "id": "madivala",
+      "query": "madivala",
+      "name": "Madiwala",
+      "file": "/data/madivala.geojson",
+      "group": "recent",
+      "closed_ring": false,
+      "extracted_at": "2026-08-25T14:40:03Z"
+    },
+    {
+      "id": "perambur_chennai",
+      "query": "perambur chennai",
+      "name": "Perambur",
+      "file": "/data/perambur_chennai.geojson",
+      "group": "recent",
+      "closed_ring": false,
+      "extracted_at": "2026-08-25T14:39:26Z"
+    },
+    {
+      "id": "trichy_tamilnadu",
+      "query": "trichy tamilnadu",
+      "name": "Tiruchirappalli",
+      "file": "/data/trichy_tamilnadu.geojson",
+      "group": "recent",
+      "closed_ring": false,
+      "extracted_at": "2026-08-25T14:37:29Z"
+    },
+    {
+      "id": "tokyo_japan",
+      "query": "Tokyo, Japan",
+      "name": "Tokyo",
+      "file": "/data/tokyo_japan.geojson",
+      "group": "recent",
+      "closed_ring": true,
+      "extracted_at": "2026-08-25T14:35:15Z"
+    },
+    {
+      "id": "anna_nagar_chennai",
+      "query": "Anna Nagar, Chennai",
+      "name": "Anna Nagar",
+      "file": "/data/anna_nagar_chennai.geojson",
+      "group": "recent",
+      "closed_ring": false,
+      "extracted_at": "2026-08-25T14:34:58Z"
+    },
+    {
+      "id": "lagos_nigeria",
+      "query": "Lagos, Nigeria",
+      "name": "Lagos",
+      "file": "/data/lagos_nigeria.geojson",
+      "group": "recent",
+      "closed_ring": true,
+      "extracted_at": "2026-08-25T14:34:44Z"
+    },
+    {
+      "id": "delaware_us",
+      "query": "delaware us",
+      "name": "Delaware",
+      "file": "/data/delaware_us.geojson",
+      "group": "recent",
+      "closed_ring": true,
+      "extracted_at": "2026-08-25T14:18:27Z"
+    }
+  ]
+}

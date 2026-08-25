@@ -26,6 +26,7 @@ import math
 import random
 import re
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -89,6 +90,24 @@ def load_scrapingbee_key() -> str:
     return ""
 
 
+class PermanentHttpError(RuntimeError):
+    """4xx (except 429): bad pb/template — do not retry."""
+
+
+_tls = threading.local()
+
+
+def http_session():
+    """One curl_cffi Session per thread so TLS/TCP is reused across tiles."""
+    session = getattr(_tls, "session", None)
+    if session is None:
+        from curl_cffi import requests as cffi
+
+        session = cffi.Session(impersonate="chrome131")
+        _tls.session = session
+    return session
+
+
 def http_get(url: str, *, use_bee: bool = False, binary: bool = False, retries: int = 4) -> Any:
     headers = {
         "accept": "*/*",
@@ -118,11 +137,15 @@ def http_get(url: str, *, use_bee: bool = False, binary: bool = False, retries: 
     last: Exception | None = None
     for attempt in range(retries):
         try:
-            from curl_cffi import requests as cffi
-
-            resp = cffi.get(url, headers=headers, impersonate="chrome131", timeout=45)
+            resp = http_session().get(url, headers=headers, timeout=45)
+            if 400 <= resp.status_code < 500 and resp.status_code != 429:
+                raise PermanentHttpError(
+                    f"HTTP {resp.status_code} (permanent; not retrying): {url[:160]}"
+                )
             resp.raise_for_status()
             return resp.content if binary else resp.text
+        except PermanentHttpError:
+            raise
         except ImportError:
             import urllib.request
 

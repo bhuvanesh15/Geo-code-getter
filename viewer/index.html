@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Region map</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #121418;
+        --panel: #1c1f26;
+        --line: #2d3340;
+        --text: #e8eaed;
+        --muted: #9aa0a6;
+        --fill: #ea4335;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      .app {
+        display: grid;
+        grid-template-columns: 300px 1fr;
+        grid-template-rows: 1fr 240px;
+        height: 100%;
+      }
+      aside {
+        grid-row: 1 / -1;
+        border-right: 1px solid var(--line);
+        background: var(--panel);
+        padding: 1rem;
+        overflow: auto;
+      }
+      h1 {
+        font-size: 1.05rem;
+        font-weight: 600;
+        margin: 0 0 0.35rem;
+      }
+      .lede {
+        font-size: 0.78rem;
+        color: var(--muted);
+        line-height: 1.4;
+        margin: 0 0 0.85rem;
+      }
+      form.search {
+        display: flex;
+        gap: 0.4rem;
+        margin-bottom: 0.85rem;
+      }
+      form.search input {
+        flex: 1;
+        min-width: 0;
+        background: #121418;
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 0.5rem 0.6rem;
+      }
+      form.search button,
+      button.place {
+        cursor: pointer;
+      }
+      form.search button {
+        background: var(--fill);
+        color: #fff;
+        border: 0;
+        border-radius: 8px;
+        padding: 0.5rem 0.7rem;
+        font-weight: 600;
+      }
+      form.search button:disabled {
+        opacity: 0.55;
+        cursor: wait;
+      }
+      .group {
+        font-size: 0.7rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin: 0.85rem 0 0.4rem;
+      }
+      button.place {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: transparent;
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 0.55rem 0.7rem;
+        margin: 0 0 0.4rem;
+      }
+      button.place:hover,
+      button.place.active {
+        border-color: var(--fill);
+        background: #2a1a18;
+      }
+      button.place .name {
+        display: block;
+        font-weight: 600;
+      }
+      button.place .meta {
+        display: block;
+        font-size: 0.72rem;
+        color: var(--muted);
+        margin-top: 0.15rem;
+      }
+      .map-wrap {
+        position: relative;
+        min-height: 0;
+      }
+      #map {
+        height: 100%;
+      }
+      .hud {
+        position: absolute;
+        z-index: 500;
+        top: 12px;
+        right: 12px;
+        max-width: 280px;
+        background: #1c1f26ee;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.75rem 0.9rem;
+        font-size: 0.85rem;
+        line-height: 1.45;
+      }
+      .hud strong {
+        display: block;
+        font-size: 1rem;
+        margin-bottom: 0.25rem;
+      }
+      .badge {
+        display: inline-block;
+        font-size: 0.7rem;
+        font-weight: 600;
+        padding: 0.12rem 0.4rem;
+        border-radius: 999px;
+        margin: 0.35rem 0;
+      }
+      .badge.ok {
+        background: #1e3a2f;
+        color: #81c995;
+      }
+      .badge.no {
+        background: #3d1f1c;
+        color: #f28b82;
+      }
+      .err {
+        color: #f28b82;
+        font-size: 0.85rem;
+      }
+      .json-out {
+        grid-column: 2;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0;
+        border-top: 1px solid var(--line);
+        background: #0e1014;
+        min-height: 0;
+      }
+      .json-pane {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        border-left: 1px solid var(--line);
+        overflow: hidden;
+      }
+      .json-pane:first-child {
+        border-left: 0;
+      }
+      .json-pane h2 {
+        margin: 0;
+        padding: 0.4rem 0.7rem;
+        font-size: 0.72rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+        border-bottom: 1px solid var(--line);
+      }
+      .json-pane pre {
+        margin: 0;
+        padding: 0.6rem 0.7rem;
+        overflow: auto;
+        flex: 1;
+        font-size: 0.72rem;
+        line-height: 1.35;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      @media (max-width: 900px) {
+        .app {
+          grid-template-columns: 1fr;
+          grid-template-rows: auto 1fr 220px;
+        }
+        aside {
+          grid-row: auto;
+          max-height: 32vh;
+        }
+        .json-out {
+          grid-column: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside>
+        <h1>Region outline</h1>
+        <p class="lede">
+          Search a place. The unofficial Maps outline is filled on the map.
+          Latency and the JSON response stay on this page.
+        </p>
+        <form class="search" id="search">
+          <input
+            id="query"
+            name="query"
+            type="text"
+            placeholder="HSR Layout, Bengaluru"
+            autocomplete="off"
+          />
+          <button type="submit" id="go">Search</button>
+        </form>
+        <div id="recent"></div>
+        <div id="list"></div>
+      </aside>
+      <div class="map-wrap">
+        <div id="map"></div>
+        <div class="hud" id="hud">Search a place or pick a catalog chip</div>
+      </div>
+      <div class="json-out">
+        <section class="json-pane">
+          <h2>Current JSON</h2>
+          <pre id="json-current">(none yet)</pre>
+        </section>
+        <section class="json-pane">
+          <h2>Previous JSON</h2>
+          <pre id="json-previous">(none yet)</pre>
+        </section>
+      </div>
+    </div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+      const map = L.map("map").setView([12.93, 77.62], 13);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: "&copy; OpenStreetMap",
+      }).addTo(map);
+
+      let layer = null;
+      let currentJson = null;
+      const queryInput = document.getElementById("query");
+      const goBtn = document.getElementById("go");
+      const hud = document.getElementById("hud");
+      const recentEl = document.getElementById("recent");
+      const currentEl = document.getElementById("json-current");
+      const previousEl = document.getElementById("json-previous");
+
+      function placeButton(place, extraClass) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = extraClass ? `place ${extraClass}` : "place";
+        const title = place.name || place.id;
+        btn.innerHTML = `<span class="name">${title}</span><span class="meta">${place.query}</span>`;
+        btn.addEventListener("click", () => {
+          document
+            .querySelectorAll("button.place")
+            .forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          runExtract(place.query);
+        });
+        return btn;
+      }
+
+      function renderRecent(places) {
+        recentEl.innerHTML = "";
+        const h = document.createElement("div");
+        h.className = "group";
+        h.textContent = "recent";
+        recentEl.appendChild(h);
+        if (!places || !places.length) {
+          const empty = document.createElement("p");
+          empty.className = "lede";
+          empty.textContent = "New searches show up here (up to 12).";
+          recentEl.appendChild(empty);
+          return;
+        }
+        for (const place of places.slice(0, 12)) {
+          recentEl.appendChild(placeButton(place));
+        }
+      }
+
+      function badge(closed) {
+        if (closed === true)
+          return '<span class="badge ok">closed ring</span>';
+        if (closed === false)
+          return '<span class="badge no">fragment — not a full region</span>';
+        return "";
+      }
+
+      function showJson(el, value) {
+        el.textContent =
+          value == null ? "(none yet)" : JSON.stringify(value, null, 2);
+      }
+
+      function showHud(props, latencyS) {
+        const km =
+          props.approx_area_km2 != null ? `~${props.approx_area_km2} km²` : "";
+        const verts =
+          props.vertices != null ? `${props.vertices} verts` : "";
+        const zoom = props.zoom != null ? `z${props.zoom}` : "";
+        const when = props.extracted_at || "—";
+        const lat =
+          latencyS != null ? `<div>latency ${latencyS}s</div>` : "";
+        hud.innerHTML = `
+          <strong>${props.name || "Result"}</strong>
+          ${badge(props.closed_ring)}
+          <div>${[km, verts, zoom].filter(Boolean).join(" · ")}</div>
+          <div>extracted_at ${when}</div>
+          ${lat}
+        `;
+      }
+
+      function paintGeo(geo) {
+        if (layer) map.removeLayer(layer);
+        layer = L.geoJSON(geo, {
+          style: {
+            color: "#ea4335",
+            weight: 2,
+            fillColor: "#ea4335",
+            fillOpacity: 0.28,
+          },
+        }).addTo(map);
+        map.fitBounds(layer.getBounds(), { padding: [28, 28] });
+      }
+
+      async function runExtract(query) {
+        const q = (query || "").trim();
+        if (!q) return;
+        queryInput.value = q;
+        goBtn.disabled = true;
+        const started = performance.now();
+        const tick = setInterval(() => {
+          const s = ((performance.now() - started) / 1000).toFixed(1);
+          hud.textContent = `Searching… ${s}s`;
+        }, 100);
+        try {
+          const res = await fetch("/api/extract", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: q }),
+          });
+          const payload = await res.json();
+          if (currentJson != null) showJson(previousEl, currentJson);
+          currentJson = payload;
+          showJson(currentEl, payload);
+          if (!res.ok || payload.error) {
+            hud.innerHTML = `<span class="err">${payload.error || res.status}</span>`;
+            return;
+          }
+          const geo = payload.geojson;
+          const props =
+            (geo && geo.features && geo.features[0] && geo.features[0].properties) ||
+            {};
+          paintGeo(geo);
+          showHud(props, payload.latency_s);
+          if (payload.recent) renderRecent(payload.recent);
+        } catch (err) {
+          hud.innerHTML = `<span class="err">${err}</span>`;
+        } finally {
+          clearInterval(tick);
+          goBtn.disabled = false;
+        }
+      }
+
+      document.getElementById("search").addEventListener("submit", (event) => {
+        event.preventDefault();
+        runExtract(queryInput.value);
+      });
+
+      async function boot() {
+        const res = await fetch("/viewer/places.json");
+        if (!res.ok) {
+          document.getElementById("list").innerHTML =
+            '<p class="err">Start with python viewer_server.py and open /viewer/</p>';
+          return;
+        }
+        const catalog = await res.json();
+        const list = document.getElementById("list");
+        let lastGroup = "";
+        for (const place of catalog.places) {
+          if (place.group !== lastGroup) {
+            lastGroup = place.group;
+            const h = document.createElement("div");
+            h.className = "group";
+            h.textContent = place.group;
+            list.appendChild(h);
+          }
+          list.appendChild(placeButton(place));
+        }
+        try {
+          const recentRes = await fetch("/viewer/recent.json");
+          const recent = recentRes.ok ? await recentRes.json() : { places: [] };
+          renderRecent(recent.places || []);
+        } catch (err) {
+          renderRecent([]);
+        }
+      }
+      boot();
+    </script>
+  </body>
+</html>
