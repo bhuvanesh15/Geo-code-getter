@@ -23,8 +23,10 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -87,7 +89,7 @@ def load_scrapingbee_key() -> str:
     return ""
 
 
-def http_get(url: str, *, use_bee: bool = False, binary: bool = False) -> Any:
+def http_get(url: str, *, use_bee: bool = False, binary: bool = False, retries: int = 4) -> Any:
     headers = {
         "accept": "*/*",
         "accept-language": "en-US,en;q=0.9",
@@ -113,19 +115,28 @@ def http_get(url: str, *, use_bee: bool = False, binary: bool = False) -> Any:
         )
         headers = {"accept": "*/*"}
 
-    try:
-        from curl_cffi import requests as cffi
+    last: Exception | None = None
+    for attempt in range(retries):
+        try:
+            from curl_cffi import requests as cffi
 
-        resp = cffi.get(url, headers=headers, impersonate="chrome131", timeout=45)
-        resp.raise_for_status()
-        return resp.content if binary else resp.text
-    except ImportError:
-        import urllib.request
+            resp = cffi.get(url, headers=headers, impersonate="chrome131", timeout=45)
+            resp.raise_for_status()
+            return resp.content if binary else resp.text
+        except ImportError:
+            import urllib.request
 
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=45) as r:
-            raw = r.read()
-        return raw if binary else raw.decode("utf-8", errors="replace")
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=45) as r:
+                raw = r.read()
+            return raw if binary else raw.decode("utf-8", errors="replace")
+        except Exception as exc:
+            last = exc
+            if attempt + 1 >= retries:
+                break
+            time.sleep(0.5 * (2**attempt) + random.random() * 0.3)
+    assert last is not None
+    raise last
 
 
 def build_url(query: str) -> str:

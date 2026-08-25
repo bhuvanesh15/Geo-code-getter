@@ -15,6 +15,85 @@ from PIL import Image
 from scipy.spatial import cKDTree
 
 
+def outline_mask(rgb: np.ndarray, base_path: Path, target_rgb: tuple[int, int, int], tolerance: float) -> np.ndarray:
+    """Pixels that belong to Maps' selected-place outline, not POI pins."""
+    if base_path.exists():
+        base = np.asarray(Image.open(base_path).convert("RGB")).astype(np.int16)
+        change = np.abs(rgb.astype(np.int16) - base).sum(axis=2)
+        # Overlay tint is ~35. Outline pixels are the heavy tail (~100–400).
+        threshold = max(50.0, float(np.percentile(change, 99.15)))
+        binary = (change > threshold).astype(np.uint8) * 255
+    else:
+        pixels = rgb.astype(np.int32)
+        hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
+        hsv_red = (
+            ((hsv[:, :, 0] <= 10) | (hsv[:, :, 0] >= 168))
+            & (hsv[:, :, 1] >= 70)
+            & (hsv[:, :, 2] >= 70)
+        )
+        target = np.array(target_rgb, dtype=np.int32)
+        distance = np.sqrt(np.sum((pixels - target) ** 2, axis=2))
+        binary = (
+            hsv_red
+            | (
+                (distance < tolerance)
+                & (pixels[:, :, 0] > 180)
+                & ((pixels[:, :, 0] - pixels[:, :, 1]) > 35)
+                & ((pixels[:, :, 0] - pixels[:, :, 2]) > 35)
+            )
+        ).astype(np.uint8) * 255
+    return cv2.dilate(binary, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)))
+
+
+def close_kernel(zoom: int, bridge_size: int) -> int:
+    """Dash spacing in pixels grows with zoom; ~71px closed Coimbatore at z12."""
+    sized = int(round(71 * (2 ** (zoom - 12))))
+    k = max(sized, bridge_size)
+    k = max(31, min(k, 181))
+    return k if k % 2 else k + 1
+
+
+def close_open_contour(connected: np.ndarray) -> np.ndarray:
+    """If the outline is one chain with two ends, draw a closing segment."""
+    skeleton = connected.copy()
+    contours, _ = cv2.findContours(skeleton, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    if not contours:
+        return connected
+    contour = max(contours, key=len)
+    pts = contour.reshape(-1, 2)
+    if len(pts) < 50:
+        return connected
+    # Endpoints of a stroke-like contour are the pair of points with max
+    # geodesic separation along the contour that are also spatially close
+    # relative to the contour length (the remaining gap).
+    n = len(pts)
+    step = max(1, n // 400)
+    sampled = pts[::step]
+    tree = cKDTree(sampled)
+    dist, idx = tree.query(sampled, k=min(8, len(sampled)))
+    dist = np.atleast_2d(dist)
+    idx = np.atleast_2d(idx)
+    best = None
+    for i, neighbours in enumerate(idx):
+        for k, j in enumerate(neighbours[1:]):
+            if not np.isfinite(dist[i, k + 1]):
+                continue
+            along = min(abs(i - j), len(sampled) - abs(i - j)) * step
+            gap = float(dist[i, k + 1])
+            if along < n * 0.4:
+                continue
+            if gap > max(40.0, n * 0.08):
+                continue
+            score = along / (gap + 1.0)
+            if best is None or score > best[0]:
+                best = (score, tuple(int(v) for v in sampled[i]), tuple(int(v) for v in sampled[j]))
+    if best is None:
+        return connected
+    closed = connected.copy()
+    cv2.line(closed, best[1], best[2], 255, 3)
+    return closed
+
+
 def inspect_colors(image_path: Path) -> None:
     image = Image.open(image_path).convert("RGB")
     colors = Counter(image.getdata())
@@ -29,7 +108,7 @@ def inspect_colors(image_path: Path) -> None:
         print(f"{color}: {count}")
 
 
-def link_dashes(mask: np.ndarray, max_gap: int, min_dash: int = 12) -> np.ndarray:
+def link_dashes(mask: np.ndarray, max_gap: int, min_dash: int = 3) -> np.ndarray:
     """Join dashes with thin straight segments instead of thickening them.
 
     Morphological closing bridges gaps with a disc as wide as the gap, which
@@ -144,54 +223,39 @@ def trace(
     """Write a GeoJSON polygon. Returns whether the outline formed a closed ring."""
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     rgb = np.asarray(Image.open(image_path).convert("RGB"))
-    pixels = rgb.astype(np.int32)
-
-    # Preferred path: the same tiles were fetched without the spotlit overlay,
-    # so anything that differs between the two renders is the outline itself.
-    # This needs no colour assumptions and ignores POI pins and labels entirely.
     base_path = image_path.parent / image_path.name.replace("stitched", "base")
-    if base_path.exists():
-        base = np.asarray(Image.open(base_path).convert("RGB")).astype(np.int32)
-        # Dropping the overlay also shifts Google's global tint by ~24, so only
-        # much larger differences are real. Requiring the changed pixel to be
-        # reddish then discards label and POI jitter, whatever its exact shade.
-        changed = np.abs(pixels - base).sum(axis=2) > 40
-        reddish = ((pixels[:, :, 0] - pixels[:, :, 1]) > 15) & (
-            (pixels[:, :, 0] - pixels[:, :, 2]) > 15
-        )
-        mask = (changed & reddish).astype(np.uint8) * 255
-    else:
-        # Fallback: match the drawn colour directly, excluding yellow road
-        # shields and the grey/red of map labels.
-        target = np.array(target_rgb, dtype=np.int32)
-        distance = np.sqrt(np.sum((pixels - target) ** 2, axis=2))
-        mask = (
-            (distance < tolerance)
-            & (pixels[:, :, 0] > 180)
-            & ((pixels[:, :, 0] - pixels[:, :, 1]) > 35)
-            & ((pixels[:, :, 0] - pixels[:, :, 2]) > 35)
-            & (np.abs(pixels[:, :, 1] - pixels[:, :, 2]) < 35)
-        ).astype(np.uint8) * 255
-
-    connected = link_dashes(mask, bridge_size)
-    connected = cv2.dilate(
-        connected, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_size, close_size))
+    mask = outline_mask(rgb, base_path, target_rgb, tolerance)
+    kernel = close_kernel(int(metadata["zoom"]), bridge_size)
+    connected = cv2.morphologyEx(
+        mask, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel, kernel))
     )
-    # A sufficiently bridged ring encloses a large black component. Recover that
-    # interior, then dilate by half the bridge width to move its edge back from
-    # the inner side of the thickened line to approximately the source centerline.
+    # A closed outline turns the city into a hole in the background. Recover
+    # that hole; if the dashes never join, fall back to linking them.
     inverted = cv2.bitwise_not(connected)
     count, labels, stats, _ = cv2.connectedComponentsWithStats(inverted)
     height, width = connected.shape
     enclosed: list[tuple[int, int]] = []
-    # An interior worth reporting covers a real fraction of the mosaic; anything
-    # smaller is a gap between dots rather than the area itself.
     min_interior = max(10_000, (height * width) // 400)
     for label in range(1, count):
         x, y, w, h, component_area = stats[label]
         touches_edge = x == 0 or y == 0 or x + w == width or y + h == height
         if not touches_edge and component_area > min_interior:
             enclosed.append((component_area, label))
+
+    if not enclosed:
+        connected = link_dashes(mask, max(bridge_size, kernel))
+        connected = cv2.dilate(
+            connected, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (close_size, close_size))
+        )
+        connected = close_open_contour(connected)
+        inverted = cv2.bitwise_not(connected)
+        count, labels, stats, _ = cv2.connectedComponentsWithStats(inverted)
+        enclosed = []
+        for label in range(1, count):
+            x, y, w, h, component_area = stats[label]
+            touches_edge = x == 0 or y == 0 or x + w == width or y + h == height
+            if not touches_edge and component_area > min_interior:
+                enclosed.append((component_area, label))
 
     closed = bool(enclosed)
     if enclosed:

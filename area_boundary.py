@@ -67,7 +67,7 @@ def pick_zoom(bbox: dict[str, float], target_px: int, max_tiles: int) -> int:
     """Smallest zoom that renders the area near target_px wide, within budget."""
     span = max(bbox["east"] - bbox["west"], 1e-6)
     ideal = math.log2(target_px * 360.0 / (span * TILE_SIZE))
-    for zoom in range(min(int(round(ideal)), 20), 4, -1):
+    for zoom in range(min(int(round(ideal)), 13), 4, -1):
         wide = lon_to_tile_x(bbox["east"], zoom) - lon_to_tile_x(bbox["west"], zoom) + 1
         tall = lat_to_tile_y(bbox["south"], zoom) - lat_to_tile_y(bbox["north"], zoom) + 1
         if wide * tall <= max_tiles:
@@ -132,6 +132,12 @@ def fetch_tile(
 
 
 def fetch_mosaic(place: dict[str, Any], zoom: int, output: Path, workers: int) -> tuple[Path, Path]:
+    image_path = output / f"stitched_z{zoom}.png"
+    metadata_path = output / f"stitched_z{zoom}.json"
+    if image_path.exists() and metadata_path.exists():
+        print(f"reusing {image_path}", flush=True)
+        return image_path, metadata_path
+
     bbox = place["bbox"]
     min_x, max_x = lon_to_tile_x(bbox["west"], zoom), lon_to_tile_x(bbox["east"], zoom)
     min_y, max_y = lat_to_tile_y(bbox["north"], zoom), lat_to_tile_y(bbox["south"], zoom)
@@ -157,8 +163,6 @@ def fetch_mosaic(place: dict[str, Any], zoom: int, output: Path, workers: int) -
         plain.paste(base, origin)
 
     plain.save(output / f"base_z{zoom}.png")
-    image_path = output / f"stitched_z{zoom}.png"
-    metadata_path = output / f"stitched_z{zoom}.json"
     canvas.save(image_path)
     metadata_path.write_text(
         json.dumps(
@@ -207,7 +211,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("query", help='Area name, e.g. "Koramangala, Bengaluru"')
     p.add_argument("--zoom", type=int, help="Force a tile zoom instead of auto-picking")
     p.add_argument("--output", type=Path, help="GeoJSON path (default: <slug>.geojson)")
-    p.add_argument("--workers", type=int, default=8)
+    p.add_argument("--workers", type=int, default=4)
     # Gaps in the dashed outline are a fixed geographic length, so their pixel
     # width grows with zoom. A moderate mosaic keeps them bridgeable; going
     # higher buys resolution but can leave the ring permanently open.
