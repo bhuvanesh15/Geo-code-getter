@@ -219,25 +219,28 @@
       <aside>
         <h1>Region outline</h1>
         <p class="lede">
-          Search a place. The unofficial Maps outline is filled on the map.
-          Latency and the JSON response stay on this page.
+          Sample outlines from saved GeoJSON. Unofficial Maps reverse-trace,
+          not the Places API. On this public site, search only loads catalog files.
         </p>
         <form class="search" id="search">
           <input
             id="query"
             name="query"
             type="text"
-            placeholder="HSR Layout, Bengaluru"
+            placeholder="Anna Nagar West, Trichy, Tokyo…"
             autocomplete="off"
           />
-          <button type="submit" id="go">Search</button>
+          <button type="submit" id="go">Load</button>
         </form>
         <div id="recent"></div>
         <div id="list"></div>
+        <p class="lede" id="foot">
+          Leaflet + OSM. Live extract: <code>python viewer_server.py</code> on localhost.
+        </p>
       </aside>
       <div class="map-wrap">
         <div id="map"></div>
-        <div class="hud" id="hud">Search a place or pick a catalog chip</div>
+        <div class="hud" id="hud">Pick a catalog place</div>
       </div>
       <div class="json-out">
         <section class="json-pane">
@@ -258,19 +261,27 @@
         attribution: "&copy; OpenStreetMap",
       }).addTo(map);
 
+      const live =
+        location.hostname === "127.0.0.1" || location.hostname === "localhost";
       let layer = null;
       let currentJson = null;
+      let catalogPlaces = [];
       const queryInput = document.getElementById("query");
       const goBtn = document.getElementById("go");
       const hud = document.getElementById("hud");
       const recentEl = document.getElementById("recent");
       const currentEl = document.getElementById("json-current");
       const previousEl = document.getElementById("json-previous");
+      if (!live) {
+        goBtn.textContent = "Load";
+        document.getElementById("foot").textContent =
+          "Static sample. Unofficial reverse-traced outline, not Places API.";
+      }
 
-      function placeButton(place, extraClass) {
+      function placeButton(place) {
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.className = extraClass ? `place ${extraClass}` : "place";
+        btn.className = "place";
         const title = place.name || place.id;
         btn.innerHTML = `<span class="name">${title}</span><span class="meta">${place.query}</span>`;
         btn.addEventListener("click", () => {
@@ -278,13 +289,14 @@
             .querySelectorAll("button.place")
             .forEach((b) => b.classList.remove("active"));
           btn.classList.add("active");
-          runExtract(place.query);
+          openPlace(place);
         });
         return btn;
       }
 
       function renderRecent(places) {
         recentEl.innerHTML = "";
+        if (!live) return;
         const h = document.createElement("div");
         h.className = "group";
         h.textContent = "recent";
@@ -314,21 +326,19 @@
           value == null ? "(none yet)" : JSON.stringify(value, null, 2);
       }
 
-      function showHud(props, latencyS) {
+      function showHud(props, extra) {
         const km =
           props.approx_area_km2 != null ? `~${props.approx_area_km2} km²` : "";
         const verts =
           props.vertices != null ? `${props.vertices} verts` : "";
         const zoom = props.zoom != null ? `z${props.zoom}` : "";
         const when = props.extracted_at || "—";
-        const lat =
-          latencyS != null ? `<div>latency ${latencyS}s</div>` : "";
         hud.innerHTML = `
           <strong>${props.name || "Result"}</strong>
           ${badge(props.closed_ring)}
           <div>${[km, verts, zoom].filter(Boolean).join(" · ")}</div>
           <div>extracted_at ${when}</div>
-          ${lat}
+          <div>${extra || "static sample"}</div>
         `;
       }
 
@@ -343,6 +353,33 @@
           },
         }).addTo(map);
         map.fitBounds(layer.getBounds(), { padding: [28, 28] });
+      }
+
+      function recordJson(payload) {
+        if (currentJson != null) showJson(previousEl, currentJson);
+        currentJson = payload;
+        showJson(currentEl, payload);
+      }
+
+      function matchCatalog(q) {
+        const n = q.toLowerCase();
+        return catalogPlaces.find(
+          (p) =>
+            (p.query && p.query.toLowerCase().includes(n)) ||
+            (p.id && p.id.toLowerCase().includes(n)) ||
+            (p.name && String(p.name).toLowerCase().includes(n))
+        );
+      }
+
+      async function loadStatic(place) {
+        const res = await fetch(place.file);
+        if (!res.ok) throw new Error("Missing " + place.file);
+        const geo = await res.json();
+        const props =
+          (geo.features && geo.features[0] && geo.features[0].properties) || {};
+        recordJson({ file: place.file, properties: props, geojson: geo });
+        paintGeo(geo);
+        showHud(props, "static sample");
       }
 
       async function runExtract(query) {
@@ -362,9 +399,7 @@
             body: JSON.stringify({ query: q }),
           });
           const payload = await res.json();
-          if (currentJson != null) showJson(previousEl, currentJson);
-          currentJson = payload;
-          showJson(currentEl, payload);
+          recordJson(payload);
           if (!res.ok || payload.error) {
             hud.innerHTML = `<span class="err">${payload.error || res.status}</span>`;
             return;
@@ -374,7 +409,7 @@
             (geo && geo.features && geo.features[0] && geo.features[0].properties) ||
             {};
           paintGeo(geo);
-          showHud(props, payload.latency_s);
+          showHud(props, "latency " + payload.latency_s + "s");
           if (payload.recent) renderRecent(payload.recent);
         } catch (err) {
           hud.innerHTML = `<span class="err">${err}</span>`;
@@ -384,22 +419,47 @@
         }
       }
 
+      async function openPlace(place) {
+        if (live) {
+          await runExtract(place.query);
+          return;
+        }
+        try {
+          await loadStatic(place);
+        } catch (err) {
+          hud.innerHTML = `<span class="err">${err}</span>`;
+        }
+      }
+
       document.getElementById("search").addEventListener("submit", (event) => {
         event.preventDefault();
-        runExtract(queryInput.value);
+        const q = queryInput.value.trim();
+        if (!q) return;
+        const hit = matchCatalog(q);
+        if (hit) {
+          openPlace(hit);
+          return;
+        }
+        if (live) {
+          runExtract(q);
+          return;
+        }
+        hud.innerHTML =
+          '<span class="err">Not on this demo. Catalog only (Anna Nagar West, Trichy, Koramangala, Lagos, Tokyo, Sydney).</span>';
       });
 
       async function boot() {
         const res = await fetch("/viewer/places.json");
         if (!res.ok) {
           document.getElementById("list").innerHTML =
-            '<p class="err">Start with python viewer_server.py and open /viewer/</p>';
+            '<p class="err">Could not load /viewer/places.json</p>';
           return;
         }
         const catalog = await res.json();
+        catalogPlaces = catalog.places || [];
         const list = document.getElementById("list");
         let lastGroup = "";
-        for (const place of catalog.places) {
+        for (const place of catalogPlaces) {
           if (place.group !== lastGroup) {
             lastGroup = place.group;
             const h = document.createElement("div");
@@ -409,15 +469,19 @@
           }
           list.appendChild(placeButton(place));
         }
-        try {
-          const recentRes = await fetch("/viewer/recent.json");
-          const recent = recentRes.ok ? await recentRes.json() : { places: [] };
-          renderRecent(recent.places || []);
-        } catch (err) {
-          renderRecent([]);
+        if (live) {
+          try {
+            const recentRes = await fetch("/viewer/recent.json");
+            const recent = recentRes.ok ? await recentRes.json() : { places: [] };
+            renderRecent(recent.places || []);
+          } catch (err) {
+            renderRecent([]);
+          }
         }
+        if (catalogPlaces[0] && !live) openPlace(catalogPlaces[0]);
       }
       boot();
+    </script>
     </script>
   </body>
 </html>

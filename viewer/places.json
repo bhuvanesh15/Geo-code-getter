@@ -2,6 +2,18 @@
   "title": "Region outline (unofficial Maps trace)",
   "places": [
     {
+      "id": "anna_nagar_west",
+      "query": "Anna Nagar West, Chennai",
+      "file": "/data/anna_nagar_west.geojson",
+      "group": "india"
+    },
+    {
+      "id": "tiruchirappalli",
+      "query": "Tiruchirappalli, Tamil Nadu",
+      "file": "/data/tiruchirappalli.geojson",
+      "group": "india"
+    },
+    {
       "id": "koramangala",
       "query": "Koramangala, Bengaluru",
       "file": "/data/koramangala.geojson",

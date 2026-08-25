@@ -73,6 +73,12 @@ Open http://127.0.0.1:8000/viewer/
 
 Leaflet is free (BSD). OSM tiles are for light local use.
 
+### Public sample UI (Vercel)
+
+Static HTML + GeoJSON (no live Maps extract). Import this GitHub repo in Vercel, framework **Other**, no build. Root URL rewrites to `/viewer/index.html`.
+
+Catalog: Anna Nagar West, Tiruchirappalli, Koramangala, Lagos, Tokyo, Sydney.
+
 ---
 
 ## Bench

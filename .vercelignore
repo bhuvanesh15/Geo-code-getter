@@ -1,0 +1,17 @@
+.cursor
+__pycache__
+*.pyc
+*.png
+tiles_*
+maps_boundary*
+maps_boundary_capture
+maps_boundary_tiles
+maps_boundary_highres
+maps_boundary_z14
+data/old
+data/v1
+*.har
+usage_cache.json
+.env
+scrapingbee.env
+AGENTS.md
